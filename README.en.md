@@ -297,6 +297,7 @@ python scripts/apply_patches.py --validate          :: blocks secrets smuggled i
 > are authorized to use**. You are responsible for complying with the target site's Terms of
 > Service and local law. Do not use it for abuse, paywall bypass, attacks or any illegal purpose.
 > The authors accept no liability for account risk, bans, data loss or indirect damages.
+> Full notice: **[DISCLAIMER.md](DISCLAIMER.md)**.
 
 ---
 
