@@ -8,7 +8,7 @@ VirtualBrowser 指纹浏览器 + FPBrowser2API 调度网关 + 一套开箱即用
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6.svg)](#环境要求)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg)](#环境要求)
-[![CI](https://github.com/qiyuechen0929/chatgpt-image-pool/actions/workflows/ci.yml/badge.svg)](https://github.com/qiyuechen0929/chatgpt-image-pool/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF.svg)](https://github.com/qiyuechen0929/chatgpt-image-pool/actions)
 [![Lint: ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](pyproject.toml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Docs](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-blueviolet.svg)](docs/00-%E6%96%B0%E6%89%8B%E5%BF%85%E8%AF%BB.md)

@@ -9,7 +9,7 @@ toolkit of scripts and docs.
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6.svg)](#requirements)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-3776AB.svg)](#requirements)
-[![CI](https://github.com/qiyuechen0929/chatgpt-image-pool/actions/workflows/ci.yml/badge.svg)](https://github.com/qiyuechen0929/chatgpt-image-pool/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF.svg)](https://github.com/qiyuechen0929/chatgpt-image-pool/actions)
 [![Lint: ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](pyproject.toml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Docs](https://img.shields.io/badge/docs-English-blue.svg)](README.en.md)
