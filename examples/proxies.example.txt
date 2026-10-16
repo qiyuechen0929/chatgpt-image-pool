@@ -1,0 +1,16 @@
+# 代理列表示例：每行一个，按顺序对应卡密顺序（第 1 行给第 1 个账号）
+#
+# 用法：
+#   pool.bat import accounts.txt --proxy-file proxies.txt --yes
+#
+# 支持格式：
+#   127.0.0.1:7891                       本地多端口代理（Clash/Mihomo 多节点转发）
+#   http://user:pass@1.2.3.4:8080        HTTP 代理
+#   socks5://user:pass@1.2.3.4:1080      SOCKS5 代理
+#
+# 注意：一个出口 IP 上跑太多账号有联动风控风险，建议一窗口一独立出口。
+# 校验代理是否生效：在该指纹窗口里访问 https://browserleaks.com/ip
+
+127.0.0.1:7891
+127.0.0.1:7892
+socks5://user:pass@198.51.100.10:1080

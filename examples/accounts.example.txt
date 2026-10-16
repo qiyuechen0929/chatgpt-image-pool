@@ -1,0 +1,15 @@
+# 卡密示例（请替换成你自己的，切勿提交真实卡密）
+#
+# 格式：邮箱----密码----2FA密钥----access_token
+#   · 分隔符：四连字符 ----（也支持中文长横线 ——）
+#   · 第 3 段：TOTP 2FA 密钥（走浏览器登录时才需要；长 token 方案仅存档备用）
+#   · 第 4 段：ChatGPT access_token（JWT，形如 eyJhbGciOi...）
+#   · 以 # 开头的行与空行会被忽略
+#
+# 用法：
+#   pool.bat import accounts.txt --only 1 --yes            先验证 1 个
+#   pool.bat import accounts.txt --yes                     全量导入
+#   pool.bat import accounts.txt --no-create-envs --yes    只更新 token（环境已存在）
+
+demo_user01@example.com----Passw0rd!A----JBSWY3DPEHPK3PXP----eyJhbGciOiJSUzI1NiIsImtpZCI6ImRlbW8ifQ.eyJhdWQiOlsiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS92MSJdLCJleHAiOjE3OTk5OTk5OTksImlhdCI6MTc5MDAwMDAwMH0.DEMO_SIGNATURE_REPLACE_ME
+demo_user02@example.com----Passw0rd!B----KRSXG5CTMVRXEZLU----eyJhbGciOiJSUzI1NiIsImtpZCI6ImRlbW8ifQ.eyJhdWQiOlsiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS92MSJdLCJleHAiOjE3OTk5OTk5OTksImlhdCI6MTc5MDAwMDAwMH0.DEMO_SIGNATURE_REPLACE_ME
