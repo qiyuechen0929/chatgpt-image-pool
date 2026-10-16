@@ -1,0 +1,67 @@
+# pre-commit 钩子（本地 CI）：提交前自动跑一遍质量门禁
+#
+# 用法：
+#   pip install pre-commit
+#   pre-commit install          # 装进 .git/hooks
+#   pre-commit run --all-files  # 手动全量跑一次
+#
+# 这里的每一项都对应一次真实踩坑，和 .github/workflows/ci.yml 保持一致：
+#   · 凭据扫描 → 防止把卡密/token/密钥推到公开仓库
+#   · 批处理检查 → 防止改坏 pool.bat（ASCII/CRLF/括号）
+#   · 补丁自检 → 防止手改补丁把 hunk 行数写错（git apply 会失败）
+#   · ruff / pytest → 常规质量门禁
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+        exclude: \.(patch|bat)$
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+        exclude: \.(patch|bat)$
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=2000]
+      - id: mixed-line-ending
+        args: [--fix=no]
+        exclude: \.bat$
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^(scripts|tests)/
+
+  - repo: local
+    hooks:
+      - id: scan-secrets
+        name: 凭据扫描（卡密/JWT/密钥/内网地址）
+        entry: python scripts/scan_secrets.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: lint-bat
+        name: 批处理静态检查（ASCII/CRLF/括号/标签）
+        entry: python scripts/lint_bat.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: validate-patches
+        name: 补丁自检（hunk 行数 + 凭据）
+        entry: python scripts/apply_patches.py --validate
+        language: system
+        pass_filenames: false
+        files: ^patches/
+
+      - id: pytest
+        name: 单元测试
+        entry: python -m pytest tests/ -q
+        language: system
+        pass_filenames: false
+        files: ^(scripts|tests)/

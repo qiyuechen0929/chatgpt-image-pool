@@ -33,7 +33,7 @@ body:
   - type: textarea
     id: doctor
     attributes:
-      label: `pool.bat doctor` 输出
+      label: "`pool.bat doctor` 输出"
       description: 完整粘贴（可先脱敏）。CI 与维护者主要看这个。
       render: text
     validations:
@@ -42,7 +42,7 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: 相关日志（`pool.bat logs --errors`）
+      label: "相关日志（`pool.bat logs --errors`）"
       description: 若日志很长，只贴报错前后 20 行即可。
       render: text
     validations:
