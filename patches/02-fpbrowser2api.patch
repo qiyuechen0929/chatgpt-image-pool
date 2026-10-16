@@ -1,0 +1,252 @@
+--- a/src/core/database.py
++++ b/src/core/database.py
+@@ -1933,10 +1933,11 @@
+                 window_key = str(w.get("window_key") or w.get("id") or w.get("dirId") or w.get("name") or "").strip()
+                 if not window_key:
+                     continue
+-                # 若该 window_key 已存在于其他 space_pk 下，跳过（窗口可能已被转移到别的项目空间）
++                # 若该 window_key 已存在于**其它** space_pk 下，跳过（窗口可能已被转移到别的项目空间）
++                # 注意：同一空间下的已存在窗口必须允许更新，否则远端窗口改名/换代理后永远同步不回来。
+                 cur_chk = await db.execute(
+-                    "SELECT 1 FROM windows WHERE window_key = ? AND deleted = 0 LIMIT 1",
+-                    (window_key,),
++                    "SELECT 1 FROM windows WHERE window_key = ? AND deleted = 0 AND space_pk != ? LIMIT 1",
++                    (window_key, int(space_pk)),
+                 )
+                 if await cur_chk.fetchone():
+                     skipped += 1
+--- a/src/core/config.py
++++ b/src/core/config.py
+@@ -303,6 +303,25 @@
+         return launcher_url
+ 
+     @property
++    def extension_connect_wait_seconds(self) -> float:
++        """触发插件连上 WebSocket 后等待注册的默认秒数。
++
++        新号池首次启动窗口时，Chromium 冷启动 + 扩展 service worker 初始化可能超过 10 秒，
++        这里给一个更宽松的全局默认，避免首轮任务报“浏览器插件未连接”。
++        """
++        import os
++        raw = os.getenv("FPB_EXTENSION_CONNECT_WAIT_SECONDS", "")
++        if raw.strip():
++            try:
++                return max(1.0, float(raw))
++            except ValueError:
++                pass
++        try:
++            return max(1.0, float(self._config.get("extension_executor", {}).get("connect_wait_seconds", 30.0)))
++        except (TypeError, ValueError):
++            return 30.0
++
++    @property
+     def extension_task_timeout_seconds(self) -> float:
+         import os
+         raw = os.getenv("FPB_EXTENSION_TASK_TIMEOUT_SECONDS", "")
+--- a/src/services/fp_browser_client.py
++++ b/src/services/fp_browser_client.py
+@@ -1097,7 +1097,19 @@
+             elif isinstance(proxy_info, str) and proxy_info.strip():
+                 proxy_addr = proxy_info.strip()
+ 
+-            platform_user = str(r.get("account") or r.get("username") or r.get("platformUserName") or "").strip() or None
++            platform_user = str(r.get("account") or r.get("username") or r.get("platformUserName") or "").strip()
++            # VirtualBrowser 侧没有独立的“平台账号”字段，号池场景通常把邮箱写在 remark
++            # （参见 scripts/batch_bind_chatgpt.py），这里回填以保证管理后台能展示绑定账号。
++            remark_raw = r.get("remark") if r.get("remark") is not None else r.get("windowRemark")
++            window_remark = str(remark_raw).strip() if remark_raw is not None else ""
++            if not platform_user and "@" in window_remark:
++                platform_user = window_remark
++            platform_user = platform_user or None
++
++            homepage = r.get("homepage") or {}
++            platform_url = None
++            if isinstance(homepage, dict):
++                platform_url = str(homepage.get("value") or "").strip() or None
+ 
+             sort_num = None
+             if wid.isdigit():
+@@ -1110,9 +1122,10 @@
+                 "window_key": wid,
+                 "window_sort_num": sort_num,
+                 "window_name": wname,
++                "window_remark": window_remark or None,
+                 "platform_account_id": None,
+                 "platform_account": platform_user,
+-                "platform_url": None,
++                "platform_url": platform_url,
+                 "proxy_addr": proxy_addr,
+                 "proxy_country": str(proxy_country).strip() if proxy_country else None,
+                 "enabled": True,
+--- a/src/services/gpt_task_executor.py
++++ b/src/services/gpt_task_executor.py
+@@ -153,6 +153,22 @@
+     )
+ 
+ 
++def _gpt_extension_connect_wait(payload: Dict[str, Any]) -> float:
++    """插件连接等待秒数：任务 payload 优先，否则用全局默认（新池冷启动需要更久）。"""
++    raw = (payload or {}).get("extension_connect_wait_seconds")
++    if raw:
++        try:
++            return max(1.0, float(raw))
++        except (TypeError, ValueError):
++            pass
++    try:
++        from ..core.config import config
++
++        return float(config.extension_connect_wait_seconds)
++    except Exception:
++        return 30.0
++
++
+ def _gpt_target_url(raw: Any = None) -> str:
+     s = _one_str(raw) or DEFAULT_GPT_TARGET
+     try:
+@@ -1661,7 +1677,7 @@
+             target_url=target_url,
+             space_id=space_id,
+             window_key=window_key,
+-            wait_seconds=float(payload.get("extension_connect_wait_seconds") or 10.0),
++            wait_seconds=_gpt_extension_connect_wait(payload),
+             headless=headless,
+             pure_mode=pure_mode,
+             log_file=log_file,
+@@ -1687,7 +1703,7 @@
+             target_url=target_url,
+             space_id=space_id,
+             window_key=window_key,
+-            connect_wait_seconds=float(payload.get("extension_connect_wait_seconds") or 10.0),
++            connect_wait_seconds=_gpt_extension_connect_wait(payload),
+             token_timeout_seconds=float(payload.get("extension_token_timeout_seconds") or 45.0),
+             log_file=log_file,
+             auto_triger_connection=True,
+@@ -1724,7 +1740,7 @@
+                     window_key=window_key,
+                     db=db,
+                     task_type_window_id=task_type_window_id,
+-                    connect_wait_seconds=float(payload.get("extension_connect_wait_seconds") or 10.0),
++                    connect_wait_seconds=_gpt_extension_connect_wait(payload),
+                     token_timeout_seconds=float(payload.get("extension_token_timeout_seconds") or 45.0),
+                     log_file=log_file,
+                 )
+--- a/skills/chatgpt-image-gen/scripts/generate_image.py
++++ b/skills/chatgpt-image-gen/scripts/generate_image.py
+@@ -139,29 +139,100 @@
+ 
+     print(f"[+] 获取到生成图片下载链接: {image_url[:80]}...")
+ 
++    def _looks_like_image(data: bytes) -> bool:
++        if len(data) < 5000:
++            return False
++        head = data[:12]
++        return (
++            head.startswith(b"\x89PNG")
++            or head.startswith(b"\xff\xd8")
++            or head.startswith(b"GIF8")
++            or (head.startswith(b"RIFF") and data[8:12] == b"WEBP")
++        )
++
++    def _save(data: bytes) -> int:
++        output_path.parent.mkdir(parents=True, exist_ok=True)
++        with open(output_path, "wb") as f:
++            f.write(data)
++        return len(data)
++
+     # 取回图片二进制文件
+-    # 优先检测活跃的 VirtualBrowser CDP 端口来完成已鉴权会话下载
++    # 本号池是“长 token 直灌”模式，窗口**没有登录态 Cookie**，
++    # 因此 estuary 图片必须带该窗口的 access_token 才能下（否则只能拿到
++    # {"detail":"File stream access denied."} 这类错误 JSON）。
++    auth_token = ""
++    try:
++        import sqlite3
++
++        db_path = Path(__file__).resolve().parents[3] / "data" / "fpbrowser.db"
++        if db_path.exists():
++            conn = sqlite3.connect(str(db_path))
++            conn.row_factory = sqlite3.Row
++            row = conn.execute(
++                """
++                SELECT tc.sora_access_token AS tok
++                FROM tasks t
++                JOIN task_type_windows tc ON tc.window_pk = t.window_pk AND tc.deleted = 0
++                WHERE t.task_id = ? AND COALESCE(tc.sora_access_token, '') <> ''
++                LIMIT 1
++                """,
++                (task_id,),
++            ).fetchone()
++            conn.close()
++            if row:
++                auth_token = str(row["tok"] or "")
++    except Exception as e:
++        print(f"[!] 读取窗口 token 失败（不影响重试）: {e}")
++
++    if auth_token:
++        try:
++            req = urllib.request.Request(
++                image_url,
++                headers={
++                    "Authorization": f"Bearer {auth_token}",
++                    "User-Agent": "Mozilla/5.0",
++                    "Origin": "https://chatgpt.com",
++                    "Referer": "https://chatgpt.com/",
++                },
++            )
++            with urllib.request.urlopen(req, timeout=60) as r:
++                data = r.read()
++            if _looks_like_image(data):
++                size = _save(data)
++                print(f"[SUCCESS] 高清图片已保存: {output_path.resolve()} (大小: {size / 1024:.1f} KB)")
++                return output_path
++            print(f"[!] token 下载返回非图片内容（{data[:60]!r}），继续尝试 CDP...")
++        except Exception as e:
++            print(f"[!] token 下载失败: {e}，继续尝试 CDP...")
++
++    # 其次：用活跃的 VirtualBrowser CDP 会话上下文下载（窗口已登录时可用）
+     try:
+         running_info = http_get(f"{vb_api_base}/api/getBrowserRunningList")
+         workers = running_info.get("data", [])
+         if workers:
+             port = workers[0].get("debuggingPort") or workers[0].get("port") or 9222
+-            print(f"[*] 借助 Worker (端口 {port}) 会话上下文高速取回原图...")
++            print(f"[*] 借助 Worker (端口 {port}) 会话上下文取回原图...")
+             size = asyncio.run(fetch_image_via_cdp(port, image_url, output_path))
+-            print(f"[SUCCESS] 高清图片已保存: {output_path.resolve()} (大小: {size / 1024:.1f} KB)")
+-            return output_path
++            if _looks_like_image(output_path.read_bytes()):
++                print(f"[SUCCESS] 高清图片已保存: {output_path.resolve()} (大小: {size / 1024:.1f} KB)")
++                return output_path
++            print("[!] CDP 返回内容不是图片，继续尝试直连下载...")
+     except Exception as e:
+-        print(f"[!] CDP 鉴权下载提示: {e}，尝试本地直连下载...")
++        print(f"[!] CDP 鉴权下载提示: {e}，尝试直连下载...")
+ 
+-    # 直连下载兜底
++    # 最后的直连下载（仅当 estuary 允许匿名访问时才会成功）
+     req = urllib.request.Request(image_url, headers={"User-Agent": "Mozilla/5.0"})
+     with urllib.request.urlopen(req, timeout=30) as r:
+         raw_bytes = r.read()
+-    output_path.parent.mkdir(parents=True, exist_ok=True)
+-    with open(output_path, "wb") as f:
+-        f.write(raw_bytes)
+-    print(f"[SUCCESS] 图片已保存: {output_path.resolve()}")
+-    return output_path
++    if _looks_like_image(raw_bytes):
++        size = _save(raw_bytes)
++        print(f"[SUCCESS] 图片已保存: {output_path.resolve()} (大小: {size / 1024:.1f} KB)")
++        return output_path
++
++    raise RuntimeError(
++        "图片下载失败：estuary 返回非图片内容（通常是窗口未登录且无可用 token）。"
++        "请确认该任务所在窗口在任务池里有 sora_access_token，或用带 token 的方式自行下载。"
++    )
+ 
+ 
+ # -------------------- 模式 B: CDP 独立直连模式 --------------------
+@@ -271,4 +342,4 @@
+     parser.add_argument("--res", type=str, default="1k", choices=["1k", "2k", "4k"], help="分辨率层级: 1k, 2k, 4k")
+     parser.add_argument("--raw-prompt", action="store_true", help="是否直接使用原始提示词（跳过自动结构化扩写与防反问优化）")
+     parser.add_argument("--port", type=int, default=9222, help="CDP 模式下的浏览器端口 (默认 9222)")
+-    parser.add_argument("--fpb-url", type=str, default="http://127.0.0.1:8000", help="FPBrowser2API 服务地址")
++    parser.add_argument("--fpb-url", type=str, default="http://127.0.0.1:8002", help="FPBrowser2API 服务地址")

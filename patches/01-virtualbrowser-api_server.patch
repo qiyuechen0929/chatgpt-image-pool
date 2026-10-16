@@ -1,0 +1,544 @@
+--- a/api_server/core.py
++++ b/api_server/core.py
+@@ -12,6 +12,7 @@
+ import os
+ import random
+ import re
++import shutil
+ import socket
+ import subprocess
+ import sys
+@@ -32,43 +33,68 @@
+ 
+ # Candidate paths for VirtualBrowser executable
+ CANDIDATE_EXE_PATHS = [
++    # 用户自定义安装目录（优先）
++    Path(r"D:\VirtualBrowser\VirtualBrowser\151.0.7922.47\VirtualBrowser.exe"),
++    Path(r"D:\VirtualBrowser\Chrome-bin\VirtualBrowser.exe"),
+     Path(r"D:\Program Files\VirtualBrowser\VirtualBrowser\151.0.7922.47\VirtualBrowser.exe"),
+     Path(r"C:\Program Files\VirtualBrowser\VirtualBrowser\151.0.7922.47\VirtualBrowser.exe"),
+-    Path(r"D:\VirtualBrowser\Chrome-bin\VirtualBrowser.exe"),
+     Path(r"C:\VirtualBrowser\Chrome-bin\VirtualBrowser.exe"),
+ ]
+ 
++# 候选的“内核根目录”：在这些目录下按 */VirtualBrowser.exe 动态探测
++CANDIDATE_CORE_BASES = [
++    Path(r"D:\VirtualBrowser\VirtualBrowser"),
++    Path(r"D:\Program Files\VirtualBrowser\VirtualBrowser"),
++    Path(r"C:\Program Files\VirtualBrowser\VirtualBrowser"),
++]
++
++
++def _looks_like_core(exe: Path) -> bool:
++    """Chromium 内核程序目录里应包含 chrome.dll / chromedriver.exe。"""
++    if not exe.exists():
++        return False
++    parent = exe.parent
++    return (parent / "chrome.dll").exists() or (parent / "chromedriver.exe").exists()
++
+ 
+ def find_browser_executable() -> Path:
+     """Find the core VirtualBrowser Chromium executable."""
+-    for p in CANDIDATE_EXE_PATHS:
++    # 0) 环境变量显式指定（最高优先级，便于自定义安装目录）
++    env_exe = os.environ.get("VB_BROWSER_EXE", "").strip()
++    if env_exe:
++        p = Path(env_exe)
++        if _looks_like_core(p):
++            return p
+         if p.exists():
+             return p
+ 
+-    # Dynamic search in Program Files
+-    for base in [
+-        Path(r"D:\Program Files\VirtualBrowser"),
+-        Path(r"C:\Program Files\VirtualBrowser"),
+-        Path(LOCAL_APP_DATA) / "Programs" / "VirtualBrowser",
+-    ]:
++    for p in CANDIDATE_EXE_PATHS:
++        if _looks_like_core(p):
++            return p
++
++    # Dynamic search: 内核根目录下的每个版本子目录
++    for base in CANDIDATE_CORE_BASES:
+         if base.exists():
+-            matches = list(base.glob("**/VirtualBrowser.exe"))
+-            for m in matches:
+-                # Need inner Chromium executable, not electron wrapper
+-                if m.parent.name != "VirtualBrowser" or "resources" not in str(m):
+-                    if (m.parent / "chrome.dll").exists() or (m.parent / "chromedriver.exe").exists():
+-                        return m
++            # 优先取版本号最大的一个
++            for child in sorted(base.iterdir(), reverse=True):
++                candidate = child / "VirtualBrowser.exe"
++                if child.is_dir() and _looks_like_core(candidate):
++                    return candidate
++
++    # 兜底：在安装根目录下递归查找包含 chrome.dll 的内核程序
++    for root in [Path(r"D:\VirtualBrowser"), Path(r"C:\VirtualBrowser")]:
++        if root.exists():
++            for m in root.glob("**/VirtualBrowser.exe"):
++                if _looks_like_core(m):
++                    return m
+ 
+-    raise FileNotFoundError("未找到 VirtualBrowser Chromium 内核执行程序 (VirtualBrowser.exe)")
++    raise FileNotFoundError("未找到 VirtualBrowser Chromium 内核执行程序 (VirtualBrowser.exe)。请设置环境变量 VB_BROWSER_EXE 指向内核 exe。")
+ 
+ 
+ def get_core_versions() -> List[str]:
+     """Get installed Chromium core versions."""
+     versions: List[str] = []
+-    for base in [
+-        Path(r"D:\Program Files\VirtualBrowser\VirtualBrowser"),
+-        Path(r"C:\Program Files\VirtualBrowser\VirtualBrowser"),
+-    ]:
++    for base in CANDIDATE_CORE_BASES:
+         if base.exists():
+             for child in base.iterdir():
+                 if child.is_dir() and (child / "VirtualBrowser.exe").exists():
+@@ -420,6 +446,16 @@
+         else:
+             running_browsers.pop(str_id, None)
+ 
++    # 扫除“通过 VirtualBrowser 客户端 UI 手工启动”的同环境进程：
++    # 这类进程没有 --remote-debugging-port，外部无法接管；同时会占住 profile 锁，
++    # 导致带调试端口的新进程闪退。这里先结束它，再用带调试端口的方式重新拉起。
++    # 可用环境变量 VB_TAKEOVER_EXTERNAL_WINDOW=0 关闭该行为。
++    if os.environ.get("VB_TAKEOVER_EXTERNAL_WINDOW", "1").strip().lower() not in ("0", "false", "no", "off"):
++        if _pid_running_by_worker_id(str_id):
++            print(f"[Info] 检测到环境 {str_id} 已由客户端手工启动（无 CDP 端口），先结束它以启用自动化接管")
++            _kill_worker_processes(str_id)
++            time.sleep(1.0)
++
+     # 2. 读取配置
+     data = read_virtual_dat()
+     target_config: Optional[Dict[str, Any]] = None
+@@ -494,31 +530,55 @@
+     # 清理残留锁
+     cleanup_profile_locks(str_id)
+ 
+-    # 7. 启动子进程
+-    try:
+-        proc = subprocess.Popen(cmd)
+-    except Exception as e:
+-        return {"success": False, "msg": f"启动浏览器进程失败: {e}", "data": None}
+-
+-    # 8. 轮询等待 CDP 就绪
++    # 7. 启动子进程（若遇到“profile 被占用 / 现有会话已存在”，先清理残留进程再重试一次）
++    proc = None
+     ws_url = ""
+-    for _ in range(40):  # 最多等待 20 秒
+-        await asyncio.sleep(0.5)
+-        if proc.poll() is not None:
+-            return {"success": False, "msg": f"浏览器进程异常退出 (exit_code={proc.returncode})", "data": None}
++    last_err = ""
++    for attempt in range(2):
+         try:
+-            req = urllib.request.Request(f"http://127.0.0.1:{port}/json/version")
+-            with urllib.request.urlopen(req, timeout=1) as resp:
+-                if resp.status == 200:
+-                    cdp_info = json.loads(resp.read().decode())
+-                    ws_url = cdp_info.get("webSocketDebuggerUrl", "")
+-                    break
+-        except Exception:
++            proc = subprocess.Popen(cmd)
++        except Exception as e:
++            return {"success": False, "msg": f"启动浏览器进程失败: {e}", "data": None}
++
++        # 8. 轮询等待 CDP 就绪
++        ws_url = ""
++        for _ in range(40):  # 最多等待 20 秒
++            await asyncio.sleep(0.5)
++            if proc.poll() is not None:
++                last_err = f"浏览器进程异常退出 (exit_code={proc.returncode})"
++                break
++            try:
++                req = urllib.request.Request(f"http://127.0.0.1:{port}/json/version")
++                with urllib.request.urlopen(req, timeout=1) as resp:
++                    if resp.status == 200:
++                        cdp_info = json.loads(resp.read().decode())
++                        ws_url = cdp_info.get("webSocketDebuggerUrl", "")
++                        break
++            except Exception:
++                continue
++
++        if ws_url:
++            break
++
++        if proc.poll() is not None and attempt == 0:
++            # 典型场景：上一次被强杀（或客户端 UI 启动）后 profile 被占用，
++            # Chromium 会直接退出并提示“请在现有的浏览器会话中打开”。
++            # 这里强制结束该环境的全部残留进程 + 清锁，再重试一次。
++            print(f"[Warn] 环境 {str_id} 启动失败（{last_err}），清理残留进程后重试...")
++            _kill_worker_processes(str_id)
++            try:
++                proc.wait(timeout=5)
++            except Exception:
++                pass
++            cleanup_profile_locks(str_id)
++            await asyncio.sleep(2.0)
+             continue
++        break
+ 
+     if not ws_url:
+-        kill_process_tree(proc.pid)
+-        return {"success": False, "msg": "等待浏览器 CDP 端口就绪超时 (20s)", "data": None}
++        if proc is not None and proc.poll() is None:
++            kill_process_tree(proc.pid)
++        return {"success": False, "msg": last_err or "等待浏览器 CDP 端口就绪超时 (20s)", "data": None}
+ 
+     browser_instance = RunningBrowser(
+         worker_id=str_id,
+@@ -547,19 +607,8 @@
+     update_browser_running_status_in_dat(str_id, False)
+ 
+     # 兜底：检测外部是否有携带 --worker-id=bid 的遗留进程
+-    try:
+-        out = subprocess.check_output(
+-            f'wmic process where "CommandLine like \'%-worker-id={str_id}%\'" get ProcessId',
+-            shell=True,
+-            text=True,
+-            stderr=subprocess.DEVNULL,
+-        )
+-        for line in out.splitlines():
+-            pid_str = line.strip()
+-            if pid_str.isdigit():
+-                kill_process_tree(int(pid_str))
+-    except Exception:
+-        pass
++    for pid in _list_worker_pids(str_id):
++        kill_process_tree(pid)
+ 
+     return {"success": True, "msg": "关闭成功"}
+ 
+@@ -662,3 +711,224 @@
+             return {"success": True, "msg": "执行成功", "data": {"result": result}}
+     except Exception as e:
+         return {"success": False, "msg": f"执行 JavaScript 失败: {e}", "data": None}
++
++
++# ============================================================
++# FPBrowser2API 兼容补充接口
++# ------------------------------------------------------------
++# FPBrowser2API 的 VirtualBrowser 适配层会调用以下三个接口，
++# 官方 16 项接口清单里没有，这里补齐以保证调度链路完整：
++#   GET  /api/isBrowserRunning
++#   POST /api/randomizeFingerprint
++#   POST /api/clearCache
++# ============================================================
++
++# 随机化指纹时会被重新生成（其余字段如 id/name/group/proxy/homepage/cookie 保持不变）
++_FINGERPRINT_KEYS = (
++    "screen",
++    "fonts",
++    "canvas",
++    "webgl-img",
++    "webgl",
++    "webgpu",
++    "audio-context",
++    "media",
++    "client-rects",
++    "speech_voices",
++    "cpu",
++    "memory",
++    "device-name",
++    "mac",
++    "dnt",
++    "port-scan",
++    "gpu",
++    "ua-full-version",
++    "sec-ch-ua",
++)
++
++# 清理本地缓存时删除的目录（保留 Cookie / LocalStorage / 登录态与配置文件）
++_CACHE_DIR_NAMES = (
++    "Cache",
++    "Code Cache",
++    "GPUCache",
++    "ShaderCache",
++    "GrShaderCache",
++    "DawnCache",
++    "DawnGraphiteCache",
++    "DawnWebGPUCache",
++    "GraphiteDawnCache",
++    "Application Cache",
++    "component_crx_cache",
++    "extensions_crx_cache",
++    "Default/Cache",
++    "Default/Code Cache",
++    "Default/GPUCache",
++    "Default/Service Worker/CacheStorage",
++    "Default/Service Worker/ScriptCache",
++)
++
++
++def find_worker_by_id(worker_id: Union[int, str]) -> Optional[Dict[str, Any]]:
++    """按环境 ID 读取配置项。"""
++    str_id = str(worker_id).strip()
++    data = read_virtual_dat()
++    for u in data.get("users", []):
++        if str(u.get("id")).strip() == str_id:
++            return u
++    return None
++
++
++def _pid_running_by_worker_id(str_id: str) -> bool:
++    """兜底检测：扫描带 --worker-id=<id> 的遗留内核进程。"""
++    return bool(_list_worker_pids(str_id))
++
++
++def _list_worker_pids(str_id: str) -> List[int]:
++    """列出所有带 --worker-id=<id> 的内核进程 PID。
++
++    注意：Windows 11 24H2 (build 26200+) 已移除 wmic.exe，原先基于 wmic 的检测会在
++    新系统上永远返回空，导致残留窗口进程占着 profile 锁、新进程启动后直接退出
++    （提示“请在现有的浏览器会话中打开”）。这里改用 PowerShell CIM 查询，wmic 仅作兵底。
++    """
++    pids: List[int] = []
++
++    # 1) PowerShell CIM（新系统首选）
++    try:
++        ps_cmd = (
++            "Get-CimInstance Win32_Process -Filter \"Name='VirtualBrowser.exe'\" | "
++            f"Where-Object {{ $_.CommandLine -like '*--worker-id={str_id}*' }} | "
++            "Select-Object -ExpandProperty ProcessId"
++        )
++        proc = subprocess.run(
++            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
++            capture_output=True,
++            text=True,
++            timeout=30,
++            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
++        )
++        for line in (proc.stdout or "").splitlines():
++            s = line.strip()
++            if s.isdigit():
++                pids.append(int(s))
++    except Exception:
++        pass
++
++    if pids:
++        return pids
++
++    # 2) wmic 兵底（仅老系统存在）
++    try:
++        out = subprocess.check_output(
++            f'wmic process where "CommandLine like \'%-worker-id={str_id}%\'" get ProcessId',
++            shell=True,
++            text=True,
++            stderr=subprocess.DEVNULL,
++            timeout=10,
++        )
++        for line in out.splitlines():
++            s = line.strip()
++            if s.isdigit():
++                pids.append(int(s))
++    except Exception:
++        pass
++    return pids
++
++
++def _kill_worker_processes(str_id: str) -> None:
++    """结束指定环境的全部内核进程（含子进程）。"""
++    for pid in _list_worker_pids(str_id):
++        kill_process_tree(pid)
++
++
++async def do_is_browser_running(bid: Union[int, str]) -> Dict[str, Any]:
++    """判断指定环境是否正在运行（返回 data=True/False）。"""
++    clean_dead_browsers()
++    str_id = str(bid).strip()
++    instance = running_browsers.get(str_id)
++    if instance is not None and instance.is_alive():
++        return {"success": True, "msg": "运行中", "data": True}
++    if _pid_running_by_worker_id(str_id):
++        return {"success": True, "msg": "运行中（外部进程）", "data": True}
++    return {"success": True, "msg": "未运行", "data": False}
++
++
++def do_randomize_fingerprint(bid: Union[int, str]) -> Dict[str, Any]:
++    """重新生成环境的随机指纹，并同步到 worker profile。"""
++    str_id = str(bid).strip()
++    data = read_virtual_dat()
++    users = data.get("users", [])
++    target: Optional[Dict[str, Any]] = None
++    for u in users:
++        if str(u.get("id")).strip() == str_id:
++            target = u
++            break
++    if target is None:
++        return {"success": False, "msg": f"未找到环境 ID={bid}", "data": None}
++
++    numeric_id = int(str_id) if str_id.isdigit() else 0
++    fresh = generate_default_browser_config(new_id=numeric_id, name=target.get("name"))
++    for key in _FINGERPRINT_KEYS:
++        if key in fresh:
++            target[key] = fresh[key]
++    target["timestamp"] = int(time.time() * 1000)
++
++    try:
++        write_virtual_dat(data)
++    except Exception as e:
++        return {"success": False, "msg": f"写入指纹配置失败: {e}", "data": None}
++
++    if str_id in running_browsers:
++        try:
++            instance = running_browsers.pop(str_id)
++            kill_process_tree(instance.pid)
++            update_browser_running_status_in_dat(str_id, False)
++        except Exception:
++            pass
++
++    try:
++        sync_worker_profile_files(str_id)
++    except Exception as e:
++        print(f"[Warn] 同步 worker 指纹配置失败: {e}")
++
++    return {"success": True, "msg": "指纹随机化成功", "data": target}
++
++
++def do_clear_cache(bid: Union[int, str]) -> Dict[str, Any]:
++    """清空环境的本地 HTTP/GPU 缓存（保留 Cookie、LocalStorage 与登录态）。"""
++    str_id = str(bid).strip()
++    worker_dir = VB_WORKERS_DIR / str_id
++    if not worker_dir.exists():
++        return {"success": False, "msg": f"环境 ID={bid} 的 profile 目录不存在: {worker_dir}", "data": None}
++
++    if str_id in running_browsers and running_browsers[str_id].is_alive():
++        return {"success": False, "msg": "环境正在运行，请先关闭窗口再清理缓存", "data": None}
++
++    removed = 0
++    freed_bytes = 0
++    cleaned: List[str] = []
++    for rel in _CACHE_DIR_NAMES:
++        path = worker_dir / rel
++        if not path.exists():
++            continue
++        try:
++            freed_bytes += sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
++            shutil.rmtree(path, ignore_errors=True)
++            removed += 1
++            cleaned.append(rel)
++        except Exception as e:
++            print(f"[Warn] 清理缓存目录失败 {path}: {e}")
++
++    # 清理根目录下的临时缓存文件
++    for pattern in ("*.tmp", "*-journal", "*-wal"):
++        for f in worker_dir.glob(pattern):
++            try:
++                freed_bytes += f.stat().st_size
++                f.unlink()
++            except Exception:
++                pass
++
++    return {
++        "success": True,
++        "msg": f"已清理 {removed} 个缓存目录",
++        "data": {"id": str_id, "removed": removed, "cleaned": cleaned, "freed_bytes": freed_bytes},
++    }
+--- a/api_server/server.py
++++ b/api_server/server.py
+@@ -29,7 +29,13 @@
+     sys.path.insert(0, str(CURRENT_DIR))
+ 
+ import core
+-from mcp_server import mcp
++
++# MCP SDK 可选依赖：缺失或大版本不兼容（mcp 2.x 重命名了 FastMCP）时，REST API 仍可正常提供
++try:
++    from mcp_server import mcp as _vb_mcp
++except Exception as _mcp_err:  # pragma: no cover - 环境相关
++    _vb_mcp = None
++    print(f"[Warn] MCP 服务未启用（不影响 REST API）：{_mcp_err}")
+ 
+ # -------------------- FastAPI App --------------------
+ app = FastAPI(
+@@ -47,10 +53,14 @@
+     allow_headers=["*"],
+ )
+ 
+-# 挂载 FastMCP SSE 协议应用
+-mcp_sse_app = mcp.sse_app()
+-app.mount("/mcp", mcp_sse_app)
+-app.mount("/sse", mcp_sse_app)
++# 挂载 FastMCP SSE 协议应用（仅当 MCP SDK 可用）
++if _vb_mcp is not None:
++    try:
++        mcp_sse_app = _vb_mcp.sse_app()
++        app.mount("/mcp", mcp_sse_app)
++        app.mount("/sse", mcp_sse_app)
++    except Exception as _mount_err:  # pragma: no cover - 环境相关
++        print(f"[Warn] MCP SSE 端点挂载失败：{_mount_err}")
+ 
+ 
+ def api_success(data: Any = None, msg: str = "success") -> Dict[str, Any]:
+@@ -621,6 +631,69 @@
+ 
+ 
+ # ============================================================
++# 4. FPBrowser2API 兼容补充接口
++# ------------------------------------------------------------
++# FPBrowser2API 的 VirtualBrowser 适配层需要：
++#   GET/POST /api/isBrowserRunning?id=1
++#   POST     /api/randomizeFingerprint  {"id": 1}
++#   POST     /api/clearCache            {"id": 1}
++# ============================================================
++
++
++async def _read_id_param(request: Request, key: str = "id") -> Optional[str]:
++    """兼容 query 与 JSON body 两种传参方式。"""
++    raw = request.query_params.get(key)
++    if raw is not None and str(raw).strip() != "":
++        return str(raw).strip()
++    try:
++        payload = await request.json()
++    except Exception:
++        payload = {}
++    if isinstance(payload, dict):
++        val = payload.get(key)
++        if val is not None and str(val).strip() != "":
++            return str(val).strip()
++    return None
++
++
++@app.get("/api/isBrowserRunning")
++@app.post("/api/isBrowserRunning")
++async def is_browser_running(request: Request):
++    """查询指定环境是否正在运行（FPBrowser2API 连接信息探测用）。"""
++    bid = await _read_id_param(request)
++    if bid is None:
++        return api_error("缺少 id 参数")
++    res = await core.do_is_browser_running(bid)
++    return api_success(res.get("data"), msg=res.get("msg", "success"))
++
++
++@app.post("/api/randomizeFingerprint")
++@app.get("/api/randomizeFingerprint")
++async def randomize_fingerprint(request: Request):
++    """重新生成环境随机指纹（仅指纹字段，不动代理/名称/分组）。"""
++    bid = await _read_id_param(request)
++    if bid is None:
++        return api_error("缺少 id 参数")
++    res = core.do_randomize_fingerprint(bid)
++    if res.get("success"):
++        return api_success(res.get("data"), msg=res.get("msg", "成功"))
++    return api_error(res.get("msg", "指纹随机化失败"))
++
++
++@app.post("/api/clearCache")
++@app.get("/api/clearCache")
++async def clear_cache(request: Request):
++    """清空环境本地缓存（保留 Cookie 与登录态）。"""
++    bid = await _read_id_param(request)
++    if bid is None:
++        return api_error("缺少 id 参数")
++    res = core.do_clear_cache(bid)
++    if res.get("success"):
++        return api_success(res.get("data"), msg=res.get("msg", "成功"))
++    return api_error(res.get("msg", "清理缓存失败"))
++
++
++# ============================================================
+ # Main Entry Point
+ # ============================================================
+ 
