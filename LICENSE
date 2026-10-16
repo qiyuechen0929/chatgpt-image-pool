@@ -1,0 +1,31 @@
+MIT License
+
+Copyright (c) 2026 生图号池搭建 Skill contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+风险与合规声明（补充，不改变 MIT 授权范围）
+
+1. 本软件仅用于技术研究，以及对**使用者本人拥有或已获授权**的账号进行自动化。
+2. 使用者须自行遵守目标站点服务条款与所在地法律法规；不得用于批量滥用、
+   绕过付费、攻击或其它违法用途。
+3. 指纹浏览器、账号、代理等第三方资源的获取与合法使用由使用者自负责任。
+4. 作者不对账号风险、风控结果、数据丢失或任何间接损失承担责任。

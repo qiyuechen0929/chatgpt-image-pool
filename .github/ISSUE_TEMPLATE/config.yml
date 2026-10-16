@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 先读文档（新手必读 / 排错手册）
+    url: https://github.com/qiyuechen0929/chatgpt-image-pool/blob/main/docs/00-%E6%96%B0%E6%89%8B%E5%BF%85%E8%AF%BB.md
+    about: 安装、配置、建池、出图、排错都在这里；90% 的问题文档里有答案
+  - name: 🩺 先跑自检
+    url: https://github.com/qiyuechen0929/chatgpt-image-pool/blob/main/docs/QUICKSTART.md
+    about: pool.bat doctor / pool.bat test / pool.bat logs --errors 三步走
+  - name: 💬 使用与讨论（Discussions）
+    url: https://github.com/qiyuechen0929/chatgpt-image-pool/discussions
+    about: 求教、分享配置、贴自己的出图结果

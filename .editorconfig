@@ -1,0 +1,30 @@
+# 编辑器统一配置（避免不同编辑器把 .bat 存成 LF / 把 .patch 换行符改掉）
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json,toml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+# Windows 批处理必须是 CRLF 且纯 ASCII（详见 CONTRIBUTING.md）
+[*.bat]
+end_of_line = crlf
+charset = ascii
+
+# 补丁文件：绝不能改换行符，否则 git apply 会失败
+[*.patch]
+end_of_line = lf
+insert_final_newline = false
+trim_trailing_whitespace = false
+
+[*.txt]
+end_of_line = lf

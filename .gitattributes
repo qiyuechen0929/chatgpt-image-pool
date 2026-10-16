@@ -1,0 +1,26 @@
+# 行尾与文本属性：这个文件能防止「换行符被 git 改掉」导致工具失效
+# 背景：本项目里 .bat 必须是 CRLF，.patch 必须保持原样，改错任何一个都会让入口/补丁失效。
+
+# 默认按文本处理，仓库内统一 LF
+* text=auto eol=lf
+
+# Windows 批处理：必须 CRLF（cmd 解析 LF 会错位吃字符）
+*.bat text eol=crlf
+
+# 补丁文件：禁止任何换行符转换，否则 git apply / 内置应用器都会定位失败
+*.patch -text -diff
+
+# 二进制
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+
+# 语言统计（GitHub 语言识别）
+*.py linguist-language=Python
+*.bat linguist-language=Batchfile
+*.patch linguist-detectable=false
+*.md linguist-documentation=true
+docs/** linguist-documentation=true

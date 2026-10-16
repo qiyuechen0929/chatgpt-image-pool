@@ -1,0 +1,47 @@
+# ============================================================
+#  敏感信息：绝对不要提交（本项目最容易犯的错）
+# ============================================================
+accounts*.txt
+!examples/accounts.example.txt
+proxies*.txt
+!examples/proxies.example.txt
+*.db
+*.db.bak-*
+*.sqlite
+.env
+.env.*
+!*.env.example
+logs/
+log/
+output/
+out/
+scratch/
+*.log
+*.prepatch.bak
+*.bak-*
+token*.json
+cookies*.json
+
+# ============================================================
+#  Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+
+# ============================================================
+#  编辑器 / 系统
+# ============================================================
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store

@@ -1,0 +1,46 @@
+name: ✨ 功能建议 / Feature request
+description: 想要新能力，或觉得哪一步太麻烦
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你遇到的问题
+      description: 描述场景，而不是直接说方案 —— 这样更容易找到更好的解法。
+      placeholder: "我有 200 个账号，现在 pool.bat import 一次只能导一个文件……"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你希望怎么做
+      placeholder: "希望支持分片导入 / 断点续传 / 并发校验 token"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及范围
+      options:
+        - 建池与卡密导入
+        - 出图（单张 / 批量 / API）
+        - 预热与窗口池
+        - 运维（状态 / 日志 / 清场 / 扩容）
+        - 安装与配置（setup / doctor）
+        - 文档
+        - 其他
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 确认
+      options:
+        - label: 我已搜索过已有 issue，没有重复
+          required: true
+        - label: 这个建议不涉及绕过目标站点付费/风控等滥用场景
+          required: true

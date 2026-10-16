@@ -1,0 +1,39 @@
+[project]
+name = "chatgpt-image-pool"
+version = "1.1.0"
+description = "Build and operate a multi-account ChatGPT text-to-image pool (VirtualBrowser + FPBrowser2API)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "qiyuechen0929" }]
+keywords = ["chatgpt", "image-generation", "gpt-image-2", "virtualbrowser", "fingerprint-browser", "account-pool", "automation"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+    "Topic :: Multimedia :: Graphics",
+]
+
+[tool.ruff]
+line-length = 130
+target-version = "py310"
+exclude = [".venv", "venv", "output", "logs", "scratch", "__pycache__"]
+
+[tool.ruff.lint]
+# 这是一个「运维脚本包」而不是库：放行模块级的 sys.path 注入（E402）、
+# 长行（E501，中文注释本来就长）、以及 CLI 里常见的 raise-without-from（B904）。
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501", "E402", "B904", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

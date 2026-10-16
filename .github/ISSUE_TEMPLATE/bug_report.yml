@@ -1,0 +1,102 @@
+name: 🐞 Bug 报告 / Bug report
+description: 报一个 bug（环境不对 / 报错 / 结果不符合预期）
+title: "[Bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **先做这三件事**，90% 的问题能自己解决：
+
+        ```bat
+        pool.bat doctor          :: 环境体检（--json 可给程序看）
+        pool.bat test            :: 端到端自检（真出一张图）
+        pool.bat logs --errors   :: 只看错误日志
+        ```
+
+        排错手册：[docs/07-troubleshooting.md](../blob/main/docs/07-troubleshooting.md)
+
+        > ⚠️ 请勿粘贴真实卡密 / access_token / 密码。粘贴日志前请先脱敏（邮箱可打码）。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 你执行了什么命令、期望是什么、实际是什么。
+      placeholder: |
+        1. 执行 `pool.bat test`
+        2. 期望出图
+        3. 实际报 `浏览器插件未连接 window_key=3`
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: `pool.bat doctor` 输出
+      description: 完整粘贴（可先脱敏）。CI 与维护者主要看这个。
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志（`pool.bat logs --errors`）
+      description: 若日志很长，只贴报错前后 20 行即可。
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: 本工具版本 / 提交号
+      description: 见 CHANGELOG 顶部，或 `git rev-parse --short HEAD`
+      placeholder: "v1.1.0 / a1b2c3d"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: 安装方式
+      options:
+        - pool.bat setup（一键）
+        - 手动按 docs/02-install.md
+        - 从旧版本升级上来
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: "### 环境"
+  - type: input
+    id: os
+    attributes:
+      label: 操作系统
+      placeholder: "Windows 11 26220（Win+R 输入 winver 查看）"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python 版本
+      placeholder: "3.11.9"
+    validations:
+      required: true
+  - type: input
+    id: upstream
+    attributes:
+      label: 上游组件版本
+      placeholder: "VirtualBrowser 2.3.1 / FPBrowser2API HEAD 日期 / 扩展 2.4.3"
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他线索
+      description: 比如你改过什么配置、换过代理、改过内核版本等。
+    validations:
+      required: false
